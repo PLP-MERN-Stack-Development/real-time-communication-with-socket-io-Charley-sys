@@ -1,0 +1,36 @@
+# Create server/.gitignore
+cat > server/.gitignore << EOF
+# Dependencies
+node_modules/
+
+# Environment
+.env
+.env.local
+
+# Logs
+logs
+*.log
+
+# Database
+data/
+mongodb/
+
+# SSL
+*.key
+*.crt
+*.pem
+
+# Runtime
+*.pid
+.coverage
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+
+# Keep example files
+!.env.example
+EOF
