@@ -5,23 +5,46 @@ import Login from './components/Login'
 import Dashboard from './components/Dashboard'
 import './App.css'
 
-const socket = io('http://localhost:5000')
+// Dynamic socket URL based on environment
+const SOCKET_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000'
 
 function App() {
   const [user, setUser] = useState(null)
   const [isConnected, setIsConnected] = useState(false)
   const [departments, setDepartments] = useState([])
   const [loading, setLoading] = useState(true)
+  const [socket, setSocket] = useState(null)
 
   useEffect(() => {
-    socket.on('connect', () => {
-      setIsConnected(true)
-      console.log('Connected to hospital server')
+    console.log('Connecting to socket:', SOCKET_URL)
+    
+    const newSocket = io(SOCKET_URL, {
+      transports: ['websocket', 'polling'],
+      timeout: 10000,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000
     })
 
-    socket.on('disconnect', () => {
+    newSocket.on('connect', () => {
+      setIsConnected(true)
+      console.log('✅ Connected to hospital server')
+    })
+
+    newSocket.on('disconnect', (reason) => {
+      setIsConnected(false)
+      console.log('❌ Disconnected from hospital server:', reason)
+    })
+
+    newSocket.on('connect_error', (error) => {
+      console.error('🚨 Connection error:', error)
       setIsConnected(false)
     })
+
+    newSocket.on('error', (error) => {
+      console.error('🚨 Socket error:', error)
+    })
+
+    setSocket(newSocket)
 
     // Load departments
     fetchDepartments()
@@ -29,21 +52,33 @@ function App() {
     // Check for stored user session
     const storedUser = localStorage.getItem('hospitalUser')
     if (storedUser) {
-      const userData = JSON.parse(storedUser)
-      setUser(userData)
-      joinSocketRoom(userData)
+      try {
+        const userData = JSON.parse(storedUser)
+        setUser(userData)
+        joinSocketRoom(newSocket, userData)
+      } catch (error) {
+        console.error('Error parsing stored user:', error)
+        localStorage.removeItem('hospitalUser')
+      }
     }
 
     return () => {
-      socket.off('connect')
-      socket.off('disconnect')
+      if (newSocket) {
+        newSocket.disconnect()
+      }
     }
   }, [])
 
   const fetchDepartments = async () => {
     try {
       setLoading(true)
-      const response = await fetch('http://localhost:5000/api/departments')
+      const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000'
+      const response = await fetch(`${API_URL}/api/departments`)
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+      
       const data = await response.json()
       setDepartments(data)
     } catch (error) {
@@ -65,26 +100,31 @@ function App() {
     }
   }
 
-  const joinSocketRoom = (userData) => {
-    socket.emit('healthcare_join', {
-      username: userData.username,
-      displayName: userData.displayName,
-      role: userData.role,
-      department: userData.department
-    })
+  const joinSocketRoom = (socketInstance, userData) => {
+    if (socketInstance && userData) {
+      socketInstance.emit('healthcare_join', {
+        username: userData.username,
+        displayName: userData.displayName,
+        role: userData.role,
+        department: userData.department
+      })
+    }
   }
 
   const handleLogin = (userData) => {
     setUser(userData)
     localStorage.setItem('hospitalUser', JSON.stringify(userData))
-    joinSocketRoom(userData)
+    if (socket) {
+      joinSocketRoom(socket, userData)
+    }
   }
 
   const handleLogout = () => {
     setUser(null)
     localStorage.removeItem('hospitalUser')
-    socket.disconnect()
-    socket.connect()
+    if (socket) {
+      socket.disconnect()
+    }
   }
 
   if (loading) {
@@ -92,7 +132,9 @@ function App() {
       <div className="loading-screen">
         <div className="loading-content">
           <h1>🏥 Hospital Communication System</h1>
+          <div className="loading-spinner"></div>
           <p>Loading departments...</p>
+          <p className="loading-subtitle">Connecting to: {SOCKET_URL}</p>
         </div>
       </div>
     )
@@ -124,6 +166,8 @@ function App() {
             } 
           />
           <Route path="/" element={<Navigate to="/dashboard" />} />
+          {/* Catch all route */}
+          <Route path="*" element={<Navigate to="/" />} />
         </Routes>
       </div>
     </Router>
