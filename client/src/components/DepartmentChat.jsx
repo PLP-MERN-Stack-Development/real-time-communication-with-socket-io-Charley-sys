@@ -1,13 +1,21 @@
 import React, { useState, useEffect, useRef } from 'react'
 
-const DepartmentChat = ({ socket, user }) => {
+const DepartmentChat = ({ socket, user, department }) => {
   const [messages, setMessages] = useState([])
   const [newMessage, setNewMessage] = useState('')
   const messagesEndRef = useRef(null)
 
   useEffect(() => {
+    // Clear messages when department changes
+    setMessages([])
+    
+    // Join the new department room
+    socket.emit('join-room', department)
+
     socket.on('receive_department_message', (message) => {
-      setMessages(prev => [...prev, message])
+      if (message.department === department) {
+        setMessages(prev => [...prev, message])
+      }
     })
 
     socket.on('department_user_joined', (data) => {
@@ -16,7 +24,8 @@ const DepartmentChat = ({ socket, user }) => {
         sender: 'System',
         content: `${data.user} (${data.role}) joined the department`,
         timestamp: new Date().toISOString(),
-        isSystem: true
+        isSystem: true,
+        department: department
       }
       setMessages(prev => [...prev, systemMessage])
     })
@@ -27,7 +36,8 @@ const DepartmentChat = ({ socket, user }) => {
         sender: 'System',
         content: `${data.user} left the department`,
         timestamp: new Date().toISOString(),
-        isSystem: true
+        isSystem: true,
+        department: department
       }
       setMessages(prev => [...prev, systemMessage])
     })
@@ -37,7 +47,7 @@ const DepartmentChat = ({ socket, user }) => {
       socket.off('department_user_joined')
       socket.off('department_user_left')
     }
-  }, [socket])
+  }, [socket, department])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -64,28 +74,34 @@ const DepartmentChat = ({ socket, user }) => {
   return (
     <div className="department-chat">
       <div className="chat-header">
-        <h3>{user.department.charAt(0).toUpperCase() + user.department.slice(1)} Department</h3>
+        <h3>{department.charAt(0).toUpperCase() + department.slice(1)} Department</h3>
         <span className="chat-info">Real-time department communication</span>
       </div>
 
       <div className="messages-container">
-        {messages.map((message) => (
-          <div 
-            key={message.id} 
-            className={`message ${message.isSystem ? 'system-message' : ''} ${
-              message.senderId === socket.id ? 'own-message' : ''
-            }`}
-          >
-            {!message.isSystem && (
-              <div className="message-header">
-                <strong className="sender-name">{message.sender}</strong>
-                <span className="sender-role">{message.senderRole}</span>
-                <span className="message-time">{formatTime(message.timestamp)}</span>
-              </div>
-            )}
-            <div className="message-content">{message.content}</div>
+        {messages.length === 0 ? (
+          <div className="no-messages">
+            <p>No messages yet in {department} department. Start the conversation!</p>
           </div>
-        ))}
+        ) : (
+          messages.map((message) => (
+            <div 
+              key={message.id} 
+              className={`message ${message.isSystem ? 'system-message' : ''} ${
+                message.senderId === socket.id ? 'own-message' : ''
+              }`}
+            >
+              {!message.isSystem && (
+                <div className="message-header">
+                  <strong className="sender-name">{message.sender}</strong>
+                  <span className="sender-role">{message.senderRole}</span>
+                  <span className="message-time">{formatTime(message.timestamp)}</span>
+                </div>
+              )}
+              <div className="message-content">{message.content}</div>
+            </div>
+          ))
+        )}
         <div ref={messagesEndRef} />
       </div>
 
@@ -94,7 +110,7 @@ const DepartmentChat = ({ socket, user }) => {
           type="text"
           value={newMessage}
           onChange={(e) => setNewMessage(e.target.value)}
-          placeholder={`Message ${user.department} department...`}
+          placeholder={`Message ${department} department...`}
           maxLength={500}
         />
         <button type="submit" disabled={!newMessage.trim()}>

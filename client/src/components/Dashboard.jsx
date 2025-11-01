@@ -9,8 +9,17 @@ const Dashboard = ({ user, socket, onLogout, isConnected, departments }) => {
   const [departmentUsers, setDepartmentUsers] = useState([])
   const [allUsers, setAllUsers] = useState([])
   const [emergencyAlerts, setEmergencyAlerts] = useState([])
+  const [selectedDepartment, setSelectedDepartment] = useState(user.department) // Default to user's department
 
   useEffect(() => {
+    // Join user's department room
+    socket.emit('healthcare_join', {
+      username: user.username,
+      displayName: user.displayName,
+      role: user.role,
+      department: user.department
+    })
+
     // Listen for department users updates
     socket.on('department_users_update', (users) => {
       setDepartmentUsers(users)
@@ -32,7 +41,7 @@ const Dashboard = ({ user, socket, onLogout, isConnected, departments }) => {
       socket.off('department_users_update')
       socket.off('emergency_alert')
     }
-  }, [socket])
+  }, [socket, user])
 
   const fetchAllUsers = async () => {
     try {
@@ -42,6 +51,12 @@ const Dashboard = ({ user, socket, onLogout, isConnected, departments }) => {
     } catch (error) {
       console.error('Failed to fetch users:', error)
     }
+  }
+
+  const handleDepartmentChange = (deptId) => {
+    setSelectedDepartment(deptId)
+    // Join the new department room for listening
+    socket.emit('join-room', deptId)
   }
 
   return (
@@ -71,22 +86,28 @@ const Dashboard = ({ user, socket, onLogout, isConnected, departments }) => {
 
       <div className="dashboard-content">
         <aside className="sidebar">
+          <div className="department-selector">
+            <h3>Select Department</h3>
+            <div className="department-buttons">
+              {departments.map(dept => (
+                <button
+                  key={dept.id}
+                  className={`dept-btn ${selectedDepartment === dept.id ? 'active' : ''}`}
+                  onClick={() => handleDepartmentChange(dept.id)}
+                >
+                  <span className="dept-name">{dept.name}</span>
+                  <span className="online-count">{dept.onlineCount || 0}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+          
           <UserList 
             departmentUsers={departmentUsers}
             allUsers={allUsers}
             currentUser={user}
             onUserSelect={(user) => setActiveTab(`private-${user.id}`)}
           />
-          
-          <div className="department-list">
-            <h3>Departments</h3>
-            {departments.map(dept => (
-              <div key={dept.id} className="department-item">
-                <span>{dept.name}</span>
-                <span className="online-count">{dept.onlineCount}</span>
-              </div>
-            ))}
-          </div>
         </aside>
 
         <main className="main-content">
@@ -95,7 +116,7 @@ const Dashboard = ({ user, socket, onLogout, isConnected, departments }) => {
               className={activeTab === 'department' ? 'active' : ''}
               onClick={() => setActiveTab('department')}
             >
-              Department Chat
+              {selectedDepartment.charAt(0).toUpperCase() + selectedDepartment.slice(1)} Department Chat
             </button>
             <button 
               className={activeTab === 'private' ? 'active' : ''}
@@ -107,7 +128,11 @@ const Dashboard = ({ user, socket, onLogout, isConnected, departments }) => {
 
           <div className="content-area">
             {activeTab === 'department' && (
-              <DepartmentChat socket={socket} user={user} />
+              <DepartmentChat 
+                socket={socket} 
+                user={user} 
+                department={selectedDepartment} 
+              />
             )}
             {activeTab === 'private' && (
               <PrivateChat socket={socket} user={user} allUsers={allUsers} />

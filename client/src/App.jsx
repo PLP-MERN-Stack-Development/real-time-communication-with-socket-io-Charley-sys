@@ -1,13 +1,17 @@
 import React, { useState, useEffect } from 'react'
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import io from 'socket.io-client'
+import Login from './components/Login'
+import Dashboard from './components/Dashboard'
+import './App.css'
 
 const socket = io('http://localhost:5000')
 
 function App() {
-  const [isConnected, setIsConnected] = useState(false)
   const [user, setUser] = useState(null)
-  const [messages, setMessages] = useState([])
-  const [newMessage, setNewMessage] = useState('')
+  const [isConnected, setIsConnected] = useState(false)
+  const [departments, setDepartments] = useState([])
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     socket.on('connect', () => {
@@ -19,113 +23,110 @@ function App() {
       setIsConnected(false)
     })
 
-    socket.on('receive_department_message', (message) => {
-      setMessages(prev => [...prev, message])
-    })
+    // Load departments
+    fetchDepartments()
+
+    // Check for stored user session
+    const storedUser = localStorage.getItem('hospitalUser')
+    if (storedUser) {
+      const userData = JSON.parse(storedUser)
+      setUser(userData)
+      joinSocketRoom(userData)
+    }
 
     return () => {
       socket.off('connect')
       socket.off('disconnect')
-      socket.off('receive_department_message')
     }
   }, [])
 
-  const joinAsStaff = () => {
-    const userData = {
-      username: 'demo_user',
-      displayName: 'Demo Staff',
-      role: 'doctor',
-      department: 'emergency'
+  const fetchDepartments = async () => {
+    try {
+      setLoading(true)
+      const response = await fetch('http://localhost:5000/api/departments')
+      const data = await response.json()
+      setDepartments(data)
+    } catch (error) {
+      console.error('Failed to fetch departments:', error)
+      // Fallback departments if API fails
+      setDepartments([
+        { id: 'emergency', name: 'Emergency Department', onlineCount: 0 },
+        { id: 'cardiology', name: 'Cardiology', onlineCount: 0 },
+        { id: 'neurology', name: 'Neurology', onlineCount: 0 },
+        { id: 'pediatrics', name: 'Pediatrics', onlineCount: 0 },
+        { id: 'surgery', name: 'Surgery', onlineCount: 0 },
+        { id: 'radiology', name: 'Radiology', onlineCount: 0 },
+        { id: 'lab', name: 'Laboratory', onlineCount: 0 },
+        { id: 'pharmacy', name: 'Pharmacy', onlineCount: 0 },
+        { id: 'administration', name: 'Administration', onlineCount: 0 }
+      ])
+    } finally {
+      setLoading(false)
     }
+  }
+
+  const joinSocketRoom = (userData) => {
+    socket.emit('healthcare_join', {
+      username: userData.username,
+      displayName: userData.displayName,
+      role: userData.role,
+      department: userData.department
+    })
+  }
+
+  const handleLogin = (userData) => {
     setUser(userData)
-    socket.emit('healthcare_join', userData)
+    localStorage.setItem('hospitalUser', JSON.stringify(userData))
+    joinSocketRoom(userData)
   }
 
-  const sendMessage = (e) => {
-    e.preventDefault()
-    if (newMessage.trim() && user) {
-      socket.emit('send_department_message', {
-        content: newMessage
-      })
-      setNewMessage('')
-    }
+  const handleLogout = () => {
+    setUser(null)
+    localStorage.removeItem('hospitalUser')
+    socket.disconnect()
+    socket.connect()
   }
 
-  if (!user) {
+  if (loading) {
     return (
-      <div style={{ padding: '20px', textAlign: 'center' }}>
-        <h1>🏥 Hospital Communication System</h1>
-        <p>Status: {isConnected ? '🟢 Connected' : '🔴 Disconnected'}</p>
-        <button onClick={joinAsStaff} style={{ padding: '10px 20px', fontSize: '16px' }}>
-          Join as Demo Staff
-        </button>
+      <div className="loading-screen">
+        <div className="loading-content">
+          <h1>🏥 Hospital Communication System</h1>
+          <p>Loading departments...</p>
+        </div>
       </div>
     )
   }
 
   return (
-    <div style={{ padding: '20px', maxWidth: '800px', margin: '0 auto' }}>
-      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-        <h1>🏥 Hospital Communication System</h1>
-        <div>
-          <span style={{ color: isConnected ? 'green' : 'red', marginRight: '20px' }}>
-            {isConnected ? '🟢 Connected' : '🔴 Disconnected'}
-          </span>
-          <span>Welcome, {user.displayName} ({user.role})</span>
-        </div>
-      </header>
-
-      <div style={{ border: '1px solid #ccc', borderRadius: '8px', padding: '20px', marginBottom: '20px' }}>
-        <h3>Emergency Department Chat</h3>
-        
-        <div style={{ height: '400px', overflowY: 'auto', border: '1px solid #eee', padding: '10px', marginBottom: '10px' }}>
-          {messages.map((msg, index) => (
-            <div key={index} style={{ marginBottom: '10px', padding: '8px', backgroundColor: '#f5f5f5', borderRadius: '4px' }}>
-              <strong>{msg.sender}</strong> ({msg.senderRole}): {msg.content}
-              <div style={{ fontSize: '12px', color: '#666' }}>
-                {new Date(msg.timestamp).toLocaleTimeString()}
-              </div>
-            </div>
-          ))}
-        </div>
-
-        <form onSubmit={sendMessage} style={{ display: 'flex', gap: '10px' }}>
-          <input
-            type="text"
-            value={newMessage}
-            onChange={(e) => setNewMessage(e.target.value)}
-            placeholder="Type your message..."
-            style={{ flex: 1, padding: '8px', fontSize: '16px' }}
+    <Router>
+      <div className="app">
+        <Routes>
+          <Route 
+            path="/login" 
+            element={
+              user ? <Navigate to="/dashboard" /> : 
+              <Login onLogin={handleLogin} departments={departments} />
+            } 
           />
-          <button type="submit" style={{ padding: '8px 16px', fontSize: '16px' }}>
-            Send
-          </button>
-        </form>
+          <Route 
+            path="/dashboard" 
+            element={
+              user ? (
+                <Dashboard 
+                  user={user} 
+                  socket={socket} 
+                  onLogout={handleLogout} 
+                  isConnected={isConnected}
+                  departments={departments}
+                />
+              ) : <Navigate to="/login" />
+            } 
+          />
+          <Route path="/" element={<Navigate to="/dashboard" />} />
+        </Routes>
       </div>
-
-      <div style={{ border: '1px solid #ccc', borderRadius: '8px', padding: '20px' }}>
-        <h3>Emergency Alert</h3>
-        <button 
-          onClick={() => {
-            socket.emit('send_emergency_alert', {
-              title: 'Emergency Situation',
-              description: 'Immediate assistance required in Emergency Department'
-            })
-          }}
-          style={{ 
-            padding: '10px 20px', 
-            fontSize: '16px', 
-            backgroundColor: '#ff4444', 
-            color: 'white', 
-            border: 'none', 
-            borderRadius: '4px',
-            cursor: 'pointer'
-          }}
-        >
-          🚨 Send Emergency Alert
-        </button>
-      </div>
-    </div>
+    </Router>
   )
 }
 
