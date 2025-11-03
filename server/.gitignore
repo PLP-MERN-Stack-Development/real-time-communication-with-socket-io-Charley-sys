@@ -34,3 +34,8 @@ mongodb/
 # Keep example files
 !.env.example
 EOF
+# Final server/.gitignore content
+node_modules/
+.env
+*.log
+.DS_Store

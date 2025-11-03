@@ -5,6 +5,7 @@ const cors = require('cors');
 const dotenv = require('dotenv');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
+const path = require('path');
 
 // Load environment variables
 dotenv.config();
@@ -32,45 +33,67 @@ const USER_ROLES = {
 // Initialize Express app
 const app = express();
 const server = http.createServer(app);
+
+// Enhanced CORS for production
+const corsOptions = {
+  origin: [
+    process.env.CLIENT_URL,
+    'http://localhost:5173',
+    'https://your-netlify-app.netlify.app' // Replace with your actual Netlify URL
+  ].filter(Boolean),
+  methods: ['GET', 'POST'],
+  credentials: true
+};
+
 const io = new Server(server, {
-  cors: {
-    origin: process.env.CLIENT_URL || 'http://localhost:5173',
-    methods: ['GET', 'POST'],
-    credentials: true,
-  },
+  cors: corsOptions,
+  transports: ['websocket', 'polling']
 });
 
 // Security middleware
-app.use(helmet());
-app.use(cors());
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginEmbedderPolicy: false
+}));
+
+app.use(cors(corsOptions));
 app.use(express.json());
 
 // Rate limiting
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100 // limit each IP to 100 requests per windowMs
+  windowMs: 15 * 60 * 1000,
+  max: 200,
+  message: 'Too many requests from this IP'
 });
 app.use(limiter);
 
+// Health check endpoint (important for Render)
+app.get('/health', (req, res) => {
+  res.status(200).json({ 
+    status: 'OK', 
+    timestamp: new Date().toISOString(),
+    service: 'Hospital Communication Backend'
+  });
+});
+
 // Hospital data stores
-const hospitalUsers = {};
-const departmentRooms = {};
+const hospitalUsers = new Map();
+const departmentRooms = new Map();
 
 // Initialize department rooms
 Object.values(HOSPITAL_DEPARTMENTS).forEach(dept => {
-  departmentRooms[dept] = {
+  departmentRooms.set(dept, {
     id: dept,
     name: `${dept.charAt(0).toUpperCase() + dept.slice(1)} Department`,
     messages: [],
     onlineUsers: new Set()
-  };
+  });
 });
 
 // Socket.io connection handler
 io.on('connection', (socket) => {
-  console.log(`🏥 Healthcare professional connected: ${socket.id}`);
+  console.log(`🏥 User connected: ${socket.id}`);
 
-  // Handle healthcare professional joining
   socket.on('healthcare_join', (userData) => {
     const user = {
       id: socket.id,
@@ -82,29 +105,31 @@ io.on('connection', (socket) => {
       status: 'available'
     };
 
-    hospitalUsers[socket.id] = user;
-
-    // Join department room
+    hospitalUsers.set(socket.id, user);
     socket.join(user.department);
-    departmentRooms[user.department].onlineUsers.add(socket.id);
+    
+    const department = departmentRooms.get(user.department);
+    if (department) {
+      department.onlineUsers.add(socket.id);
+    }
 
-    // Notify department
     socket.to(user.department).emit('department_user_joined', {
       user: user.displayName,
       role: user.role
     });
 
-    // Send updated user list
     io.to(user.department).emit('department_users_update', 
-      getDepartmentUsers(user.department)
+      Array.from(hospitalUsers.values()).filter(u => 
+        u.department === user.department && u.isOnline
+      )
     );
 
-    console.log(`👨‍⚕️ ${user.displayName} (${user.role}) joined ${user.department}`);
+    console.log(`👨‍⚕️ ${user.displayName} joined ${user.department}`);
   });
 
-  // Handle department messages
+  // ... (rest of your socket event handlers remain the same)
   socket.on('send_department_message', (messageData) => {
-    const user = hospitalUsers[socket.id];
+    const user = hospitalUsers.get(socket.id);
     if (!user) return;
 
     const message = {
@@ -117,22 +142,20 @@ io.on('connection', (socket) => {
       timestamp: new Date().toISOString()
     };
 
-    // Store message
-    departmentRooms[user.department].messages.push(message);
-    
-    // Limit stored messages
-    if (departmentRooms[user.department].messages.length > 200) {
-      departmentRooms[user.department].messages.shift();
+    const department = departmentRooms.get(user.department);
+    if (department) {
+      department.messages.push(message);
+      if (department.messages.length > 200) {
+        department.messages.shift();
+      }
     }
 
-    // Broadcast to department
     io.to(user.department).emit('receive_department_message', message);
   });
 
-  // Handle private messages
   socket.on('send_private_message', ({ toUserId, content }) => {
-    const fromUser = hospitalUsers[socket.id];
-    const toUser = hospitalUsers[toUserId];
+    const fromUser = hospitalUsers.get(socket.id);
+    const toUser = hospitalUsers.get(toUserId);
     
     if (!fromUser || !toUser) return;
 
@@ -146,14 +169,12 @@ io.on('connection', (socket) => {
       timestamp: new Date().toISOString()
     };
 
-    // Send to both users
     io.to(socket.id).emit('receive_private_message', message);
     io.to(toUserId).emit('receive_private_message', message);
   });
 
-  // Handle emergency alerts
   socket.on('send_emergency_alert', (alertData) => {
-    const user = hospitalUsers[socket.id];
+    const user = hospitalUsers.get(socket.id);
     if (!user) return;
 
     const alert = {
@@ -166,42 +187,32 @@ io.on('connection', (socket) => {
       timestamp: new Date().toISOString()
     };
 
-    // Broadcast to all users
     io.emit('emergency_alert', alert);
     console.log(`🚨 EMERGENCY: ${user.displayName} - ${alert.title}`);
   });
 
-  // Handle disconnection
   socket.on('disconnect', () => {
-    const user = hospitalUsers[socket.id];
+    const user = hospitalUsers.get(socket.id);
     if (user) {
-      // Remove from department
-      if (departmentRooms[user.department]) {
-        departmentRooms[user.department].onlineUsers.delete(socket.id);
+      const department = departmentRooms.get(user.department);
+      if (department) {
+        department.onlineUsers.delete(socket.id);
       }
 
-      // Notify department
       socket.to(user.department).emit('department_user_left', {
         user: user.displayName
       });
 
-      // Update user lists
       io.to(user.department).emit('department_users_update', 
-        getDepartmentUsers(user.department)
+        Array.from(hospitalUsers.values()).filter(u => 
+          u.department === user.department && u.isOnline
+        )
       );
 
       console.log(`👋 ${user.displayName} disconnected`);
     }
-
-    delete hospitalUsers[socket.id];
+    hospitalUsers.delete(socket.id);
   });
-
-  // Helper function
-  function getDepartmentUsers(department) {
-    return Object.values(hospitalUsers).filter(user => 
-      user.department === department && user.isOnline
-    );
-  }
 });
 
 // API routes
@@ -209,13 +220,14 @@ app.get('/api/health', (req, res) => {
   res.json({
     status: 'OK',
     server: 'Hospital Communication System',
-    onlineUsers: Object.keys(hospitalUsers).length,
-    departments: Object.keys(departmentRooms).length
+    onlineUsers: hospitalUsers.size,
+    departments: departmentRooms.size,
+    environment: process.env.NODE_ENV || 'development'
   });
 });
 
 app.get('/api/departments', (req, res) => {
-  const departments = Object.values(departmentRooms).map(dept => ({
+  const departments = Array.from(departmentRooms.values()).map(dept => ({
     id: dept.id,
     name: dept.name,
     onlineCount: dept.onlineUsers.size
@@ -224,27 +236,29 @@ app.get('/api/departments', (req, res) => {
 });
 
 app.get('/api/users', (req, res) => {
-  res.json(Object.values(hospitalUsers));
+  res.json(Array.from(hospitalUsers.values()));
 });
 
 // Root route
 app.get('/', (req, res) => {
   res.json({
-    message: '🏥 Hospital Communication System Server',
+    message: '🏥 Hospital Communication System API',
+    version: '1.0.0',
     endpoints: {
       health: '/api/health',
       departments: '/api/departments',
       users: '/api/users'
-    }
+    },
+    documentation: 'WebSocket connections available for real-time communication'
   });
 });
 
 // Start server
 const PORT = process.env.PORT || 5000;
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
   console.log(`🏥 Hospital Communication System running on port ${PORT}`);
+  console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`🔗 Health: http://localhost:${PORT}/api/health`);
-  console.log(`📊 Departments: http://localhost:${PORT}/api/departments`);
 });
 
-module.exports = { app, server, io };
+module.exports = app;

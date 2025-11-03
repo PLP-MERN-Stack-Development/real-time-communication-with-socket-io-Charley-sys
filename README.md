@@ -4,7 +4,7 @@ A real-time communication platform built for healthcare professionals using the 
 https://img.shields.io/badge/Status-Deployed-success https://img.shields.io/badge/Stack-MERN-blue https://img.shields.io/badge/Real--Time-Socket.io-green
 
 🌟 Live Demo
-Frontend: https://hospital-chat-frontend.vercel.app
+Frontend:https://6908e81b93fa1fc7c5e6b163--elegant-tanuki-d0cbe3.netlify.app/login
 
 Backend API: https://hospital-chat-backend.onrender.com
 
@@ -102,7 +102,7 @@ Helmet - Security middleware
 Express Rate Limit - Rate limiting middleware
 
 Deployment
-Vercel - Frontend hosting
+Netlify - Frontend hosting
 
 Render - Backend hosting
 
@@ -331,7 +331,7 @@ Contact the development team
 🙏 Acknowledgments
 Socket.io team for excellent real-time communication library
 
-Vercel and Render for generous free hosting tiers
+Netlify and Render for generous free hosting tiers
 
 React community for comprehensive documentation
 
