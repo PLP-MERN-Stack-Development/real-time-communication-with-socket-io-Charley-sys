@@ -5,20 +5,11 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 5173,
-    proxy: {
-      '/api': {
-        target: process.env.VITE_API_URL || 'http://localhost:5000',
-        changeOrigin: true
-      }
-    }
   },
   build: {
     outDir: 'dist',
-    sourcemap: false,
-    chunkSizeWarningLimit: 1600
+    sourcemap: false
   },
-  // Vercel specific configuration
-  define: {
-    'process.env': process.env
-  }
+  // Important for Netlify SPA routing
+  base: './'
 })
