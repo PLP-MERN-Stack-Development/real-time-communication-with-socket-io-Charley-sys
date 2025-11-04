@@ -4,7 +4,7 @@ A real-time communication platform built for healthcare professionals using the 
 https://img.shields.io/badge/Status-Deployed-success https://img.shields.io/badge/Stack-MERN-blue https://img.shields.io/badge/Real--Time-Socket.io-green
 
 🌟 Live Demo
-Frontend:https://elegant-tanuki-d0cbe3.netlify.app/login
+Frontend:https://lucent-chebakia-d59593.netlify.app/login
 
 Backend API: https://hospital-chat-backend.onrender.com
 
