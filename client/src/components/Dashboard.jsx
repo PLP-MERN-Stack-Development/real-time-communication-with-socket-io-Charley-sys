@@ -4,14 +4,16 @@ import PrivateChat from './PrivateChat'
 import EmergencyAlert from './EmergencyAlert'
 import UserList from './UserList'
 
-const Dashboard = ({ user, socket, onLogout, isConnected, departments }) => {
+const Dashboard = ({ user, socket, onLogout, isConnected, departments = [] }) => {
   const [activeTab, setActiveTab] = useState('department')
   const [departmentUsers, setDepartmentUsers] = useState([])
   const [allUsers, setAllUsers] = useState([])
   const [emergencyAlerts, setEmergencyAlerts] = useState([])
-  const [selectedDepartment, setSelectedDepartment] = useState(user.department) // Default to user's department
+  const [selectedDepartment, setSelectedDepartment] = useState(user?.department || 'emergency')
 
   useEffect(() => {
+    if (!socket || !user) return
+
     // Join user's department room
     socket.emit('healthcare_join', {
       username: user.username,
@@ -22,20 +24,13 @@ const Dashboard = ({ user, socket, onLogout, isConnected, departments }) => {
 
     // Listen for department users updates
     socket.on('department_users_update', (users) => {
-      setDepartmentUsers(users)
+      setDepartmentUsers(Array.isArray(users) ? users : [])
     })
 
     // Listen for emergency alerts
     socket.on('emergency_alert', (alert) => {
-      setEmergencyAlerts(prev => [alert, ...prev])
-      // Auto-remove alert after 30 seconds
-      setTimeout(() => {
-        setEmergencyAlerts(prev => prev.filter(a => a.id !== alert.id))
-      }, 30000)
+      setEmergencyAlerts(prev => [alert, ...prev].slice(0, 5)) // Keep only 5 latest
     })
-
-    // Load all users
-    fetchAllUsers()
 
     return () => {
       socket.off('department_users_update')
@@ -43,21 +38,13 @@ const Dashboard = ({ user, socket, onLogout, isConnected, departments }) => {
     }
   }, [socket, user])
 
-  const fetchAllUsers = async () => {
-    try {
-      const response = await fetch('http://localhost:5000/api/users')
-      const users = await response.json()
-      setAllUsers(users)
-    } catch (error) {
-      console.error('Failed to fetch users:', error)
-    }
-  }
-
   const handleDepartmentChange = (deptId) => {
     setSelectedDepartment(deptId)
-    // Join the new department room for listening
     socket.emit('join-room', deptId)
   }
+
+  // Safe department list
+  const safeDepartments = Array.isArray(departments) ? departments : []
 
   return (
     <div className="dashboard">
@@ -69,7 +56,7 @@ const Dashboard = ({ user, socket, onLogout, isConnected, departments }) => {
               {isConnected ? '🟢 Connected' : '🔴 Disconnected'}
             </span>
             <span className="user-info">
-              {user.displayName} ({user.role}) - {user.department}
+              {user?.displayName || 'User'} ({user?.role || 'staff'}) - {user?.department || 'emergency'}
             </span>
           </div>
         </div>
@@ -89,16 +76,22 @@ const Dashboard = ({ user, socket, onLogout, isConnected, departments }) => {
           <div className="department-selector">
             <h3>Select Department</h3>
             <div className="department-buttons">
-              {departments.map(dept => (
-                <button
-                  key={dept.id}
-                  className={`dept-btn ${selectedDepartment === dept.id ? 'active' : ''}`}
-                  onClick={() => handleDepartmentChange(dept.id)}
-                >
-                  <span className="dept-name">{dept.name}</span>
-                  <span className="online-count">{dept.onlineCount || 0}</span>
-                </button>
-              ))}
+              {safeDepartments.length > 0 ? (
+                safeDepartments.map(dept => (
+                  <button
+                    key={dept.id || dept}
+                    className={`dept-btn ${selectedDepartment === (dept.id || dept) ? 'active' : ''}`}
+                    onClick={() => handleDepartmentChange(dept.id || dept)}
+                  >
+                    <span className="dept-name">{dept.name || dept}</span>
+                    <span className="online-count">{dept.onlineCount || 0}</span>
+                  </button>
+                ))
+              ) : (
+                <div className="no-departments">
+                  <p>No departments available</p>
+                </div>
+              )}
             </div>
           </div>
           
@@ -136,14 +129,6 @@ const Dashboard = ({ user, socket, onLogout, isConnected, departments }) => {
             )}
             {activeTab === 'private' && (
               <PrivateChat socket={socket} user={user} allUsers={allUsers} />
-            )}
-            {activeTab.startsWith('private-') && (
-              <PrivateChat 
-                socket={socket} 
-                user={user} 
-                allUsers={allUsers}
-                selectedUserId={activeTab.split('-')[1]}
-              />
             )}
           </div>
         </main>

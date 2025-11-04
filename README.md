@@ -6,9 +6,9 @@ https://img.shields.io/badge/Status-Deployed-success https://img.shields.io/badg
 🌟 Live Demo
 Frontend:https://6908e81b93fa1fc7c5e6b163--elegant-tanuki-d0cbe3.netlify.app/login
 
-Backend API: https://hospital-chat-backend.onrender.com
+Backend API: https://hospital-communication-system-server.onrender.com/
 
-API Health Check: https://hospital-chat-backend.onrender.com/api/health
+API Health Check: https://hospital-communication-system-server.onrender.com/api/health
 
 📋 Table of Contents
 Features
@@ -179,7 +179,7 @@ VITE_API_URL=http://localhost:5000
 📚 API Documentation
 Base URL
 text
-https://hospital-chat-backend.onrender.com/api
+https://hospital-communication-system-server.onrender.com/api/health
 Health Check
 http
 GET /api/health

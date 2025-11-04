@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 
-const Login = ({ onLogin, departments }) => {
+const Login = ({ onLogin, departments = [] }) => {
   const [formData, setFormData] = useState({
     username: '',
     displayName: '',
@@ -21,6 +21,17 @@ const Login = ({ onLogin, departments }) => {
     { value: 'technician', label: 'Technician' },
     { value: 'admin', label: 'Administrator' }
   ]
+
+  // Safe departments list - handle undefined/empty arrays
+  const safeDepartments = Array.isArray(departments) && departments.length > 0 
+    ? departments 
+    : [
+        { id: 'emergency', name: 'Emergency Department' },
+        { id: 'cardiology', name: 'Cardiology' },
+        { id: 'neurology', name: 'Neurology' },
+        { id: 'pediatrics', name: 'Pediatrics' },
+        { id: 'surgery', name: 'Surgery' }
+      ]
 
   return (
     <div className="login-container">
@@ -75,9 +86,9 @@ const Login = ({ onLogin, departments }) => {
               value={formData.department}
               onChange={(e) => setFormData({...formData, department: e.target.value})}
             >
-              {departments.map(dept => (
+              {safeDepartments.map(dept => (
                 <option key={dept.id} value={dept.id}>
-                  {dept.name} ({dept.onlineCount || 0} online)
+                  {dept.name}
                 </option>
               ))}
             </select>
@@ -87,17 +98,6 @@ const Login = ({ onLogin, departments }) => {
             Join Hospital Network
           </button>
         </form>
-
-        <div className="login-info">
-          <h3>System Features:</h3>
-          <ul>
-            <li>🔒 Secure department-based communication</li>
-            <li>🚨 Emergency alert broadcasting</li>
-            <li>💬 Private messaging between staff</li>
-            <li>📊 Real-time user presence</li>
-            <li>🏥 Multi-department support</li>
-          </ul>
-        </div>
       </div>
     </div>
   )

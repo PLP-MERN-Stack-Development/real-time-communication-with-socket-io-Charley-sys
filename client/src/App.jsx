@@ -5,74 +5,53 @@ import Login from './components/Login'
 import Dashboard from './components/Dashboard'
 import './App.css'
 
-// Dynamic socket URL based on environment
 const SOCKET_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000'
 
 function App() {
   const [user, setUser] = useState(null)
   const [isConnected, setIsConnected] = useState(false)
-  const [departments, setDepartments] = useState([])
-  const [loading, setLoading] = useState(true)
   const [socket, setSocket] = useState(null)
+  const [departments, setDepartments] = useState([]) // Add departments state
 
   useEffect(() => {
-    console.log('Connecting to socket:', SOCKET_URL)
-    
     const newSocket = io(SOCKET_URL, {
-      transports: ['websocket', 'polling'],
-      timeout: 10000,
-      reconnectionAttempts: 5,
-      reconnectionDelay: 1000
+      transports: ['websocket', 'polling']
     })
 
     newSocket.on('connect', () => {
       setIsConnected(true)
-      console.log('✅ Connected to hospital server')
+      console.log('✅ Connected to backend')
+      // Fetch departments when connected
+      fetchDepartments()
     })
 
-    newSocket.on('disconnect', (reason) => {
+    newSocket.on('disconnect', () => {
       setIsConnected(false)
-      console.log('❌ Disconnected from hospital server:', reason)
     })
 
     newSocket.on('connect_error', (error) => {
-      console.error('🚨 Connection error:', error)
-      setIsConnected(false)
-    })
-
-    newSocket.on('error', (error) => {
-      console.error('🚨 Socket error:', error)
+      console.error('Connection error:', error)
+      // Use fallback departments if connection fails
+      setDepartments(getFallbackDepartments())
     })
 
     setSocket(newSocket)
 
-    // Load departments
-    fetchDepartments()
-
-    // Check for stored user session
+    // Check for stored user
     const storedUser = localStorage.getItem('hospitalUser')
     if (storedUser) {
-      try {
-        const userData = JSON.parse(storedUser)
-        setUser(userData)
-        joinSocketRoom(newSocket, userData)
-      } catch (error) {
-        console.error('Error parsing stored user:', error)
-        localStorage.removeItem('hospitalUser')
-      }
+      setUser(JSON.parse(storedUser))
     }
 
-    return () => {
-      if (newSocket) {
-        newSocket.disconnect()
-      }
-    }
+    return () => newSocket.disconnect()
   }, [])
 
+  // Function to fetch departments from backend
   const fetchDepartments = async () => {
     try {
-      setLoading(true)
       const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000'
+      console.log('Fetching departments from:', `${API_URL}/api/departments`)
+      
       const response = await fetch(`${API_URL}/api/departments`)
       
       if (!response.ok) {
@@ -80,64 +59,39 @@ function App() {
       }
       
       const data = await response.json()
-      setDepartments(data)
+      console.log('Departments loaded:', data)
+      setDepartments(Array.isArray(data) ? data : getFallbackDepartments())
     } catch (error) {
       console.error('Failed to fetch departments:', error)
-      // Fallback departments if API fails
-      setDepartments([
-        { id: 'emergency', name: 'Emergency Department', onlineCount: 0 },
-        { id: 'cardiology', name: 'Cardiology', onlineCount: 0 },
-        { id: 'neurology', name: 'Neurology', onlineCount: 0 },
-        { id: 'pediatrics', name: 'Pediatrics', onlineCount: 0 },
-        { id: 'surgery', name: 'Surgery', onlineCount: 0 },
-        { id: 'radiology', name: 'Radiology', onlineCount: 0 },
-        { id: 'lab', name: 'Laboratory', onlineCount: 0 },
-        { id: 'pharmacy', name: 'Pharmacy', onlineCount: 0 },
-        { id: 'administration', name: 'Administration', onlineCount: 0 }
-      ])
-    } finally {
-      setLoading(false)
+      // Use fallback departments if API fails
+      setDepartments(getFallbackDepartments())
     }
   }
 
-  const joinSocketRoom = (socketInstance, userData) => {
-    if (socketInstance && userData) {
-      socketInstance.emit('healthcare_join', {
-        username: userData.username,
-        displayName: userData.displayName,
-        role: userData.role,
-        department: userData.department
-      })
-    }
+  // Fallback departments in case API is unavailable
+  const getFallbackDepartments = () => {
+    return [
+      { id: 'emergency', name: 'Emergency Department', onlineCount: 0 },
+      { id: 'cardiology', name: 'Cardiology', onlineCount: 0 },
+      { id: 'neurology', name: 'Neurology', onlineCount: 0 },
+      { id: 'pediatrics', name: 'Pediatrics', onlineCount: 0 },
+      { id: 'surgery', name: 'Surgery', onlineCount: 0 },
+      { id: 'radiology', name: 'Radiology', onlineCount: 0 },
+      { id: 'lab', name: 'Laboratory', onlineCount: 0 },
+      { id: 'pharmacy', name: 'Pharmacy', onlineCount: 0 },
+      { id: 'administration', name: 'Administration', onlineCount: 0 }
+    ]
   }
 
   const handleLogin = (userData) => {
     setUser(userData)
     localStorage.setItem('hospitalUser', JSON.stringify(userData))
-    if (socket) {
-      joinSocketRoom(socket, userData)
-    }
   }
 
   const handleLogout = () => {
     setUser(null)
     localStorage.removeItem('hospitalUser')
-    if (socket) {
-      socket.disconnect()
-    }
-  }
-
-  if (loading) {
-    return (
-      <div className="loading-screen">
-        <div className="loading-content">
-          <h1>🏥 Hospital Communication System</h1>
-          <div className="loading-spinner"></div>
-          <p>Loading departments...</p>
-          <p className="loading-subtitle">Connecting to: {SOCKET_URL}</p>
-        </div>
-      </div>
-    )
+    if (socket) socket.disconnect()
   }
 
   return (
@@ -147,8 +101,8 @@ function App() {
           <Route 
             path="/login" 
             element={
-              user ? <Navigate to="/dashboard" /> : 
-              <Login onLogin={handleLogin} departments={departments} />
+              user ? <Navigate to="/dashboard" replace /> : 
+              <Login onLogin={handleLogin} departments={departments} /> /* Pass departments */
             } 
           />
           <Route 
@@ -160,14 +114,13 @@ function App() {
                   socket={socket} 
                   onLogout={handleLogout} 
                   isConnected={isConnected}
-                  departments={departments}
+                  departments={departments} // Pass departments
                 />
-              ) : <Navigate to="/login" />
+              ) : <Navigate to="/login" replace />
             } 
           />
-          <Route path="/" element={<Navigate to="/dashboard" />} />
-          {/* Catch all route */}
-          <Route path="*" element={<Navigate to="/" />} />
+          <Route path="/" element={<Navigate to="/login" replace />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </div>
     </Router>
